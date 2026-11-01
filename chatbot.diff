@@ -1,0 +1,181 @@
+--- a/ui/chatbot.py
++++ b/ui/chatbot.py
+@@ -251,6 +251,52 @@
+ 
+ 
+ # ============================================================
++# SESSION HELPERS
++# ============================================================
++
++# Workflow stages reached once all follow-up questions are finished and the
++# full analysis (prediction, risk, recommendations, report) is complete.
++_DASHBOARD_STAGES = ("REPORT_GENERATION", "HOSPITAL_OFFER")
++
++# Temporary per-session values created by the Symptom Checker / Medical Report
++# pages. Patient records stored in the database are never touched.
++_SESSION_KEYS_TO_RESET = (
++    "report_pdf_path", "report_pdf_valid",
++    "report_patient_name", "report_patient_phone", "report_patient_email",
++    "report_patient_address", "report_patient_age", "report_patient_gender",
++    "report_patient_ref_id",
++    "rep_input_name", "rep_input_phone", "rep_input_email", "rep_input_address",
++    "rep_input_age", "rep_input_gender", "rep_input_ref_id",
++)
++
++
++def _dashboard_ready(state: dict) -> bool:
++    """True only when follow-up questions are done and the analysis is complete."""
++    return (
++        bool(state.get("extracted_symptoms"))
++        and not state.get("awaiting_followup")
++        and state.get("stage") in _DASHBOARD_STAGES
++    )
++
++
++def _start_new_session():
++    """Reset temporary answers/results so a fresh symptom-checking session starts."""
++    st.session_state["messages"] = [
++        {
++            "role": "assistant",
++            "content": (
++                "Hello! I am your MediDiagnose AI Health Assistant.\n\n"
++                "Please describe what symptoms you are experiencing."
++            ),
++        }
++    ]
++    st.session_state["medical_state"] = create_initial_state()
++    for key in _SESSION_KEYS_TO_RESET:
++        st.session_state.pop(key, None)
++    st.rerun()
++
++
++# ============================================================
+ # MAIN CHATBOT PAGE
+ # ============================================================
+ 
+@@ -319,22 +365,10 @@
+             st.markdown(message["content"])
+ 
+     # --------------------------------------------------------
+-    # RESET BUTTON
++    # RESET BUTTON (slot filled below: once the Clinical Dashboard is
++    # visible, its own New Session button replaces this one)
+     # --------------------------------------------------------
+-    col_r1, col_r2 = st.columns([5, 1])
+-    with col_r2:
+-        if st.button("New Session", use_container_width=True):
+-            st.session_state["messages"] = [
+-                {
+-                    "role": "assistant",
+-                    "content": (
+-                        "Hello! I am your MediDiagnose AI Health Assistant.\n\n"
+-                        "Please describe what symptoms you are experiencing."
+-                    )
+-                }
+-            ]
+-            st.session_state["medical_state"] = create_initial_state()
+-            st.rerun()
++    reset_slot = st.container()
+ 
+     # --------------------------------------------------------
+     # CHAT INPUT
+@@ -364,12 +398,19 @@
+         _build_and_display_response(updated_state)
+ 
+     # ========================================================
+-    # CLINICAL DASHBOARD (shown after symptoms extracted)
++    # CLINICAL DASHBOARD (shown once, directly after the follow-up
++    # questions are completed)
+     # ========================================================
+     state = st.session_state["medical_state"]
+-    extracted_syms = state.get("extracted_symptoms", [])
++    dashboard_visible = _dashboard_ready(state)
+ 
+-    if extracted_syms and state.get("stage") not in ("INIT", "SYMPTOM_EXTRACTION", None):
++    if not dashboard_visible:
++        with reset_slot:
++            col_r1, col_r2 = st.columns([5, 1])
++            with col_r2:
++                if st.button("New Session", key="btn_new_session_top", use_container_width=True):
++                    _start_new_session()
++    else:
+         _render_dashboard(state)
+ 
+     # ========================================================
+@@ -410,6 +451,9 @@
+ 
+     # EMERGENCY FLOW
+     if is_emergency:
++        # The Clinical Dashboard shows the full emergency panel; avoid repeating it here.
++        if _dashboard_ready(state):
++            return
+         emergency_numbers = state.get("emergency_numbers", config.DEFAULT_EMERGENCY_NUMBERS)
+         emergency_reasons = state.get("emergency_reasons", [])
+         emergency_message = state.get("emergency_message", "")
+@@ -434,16 +478,15 @@
+ 
+     # FOLLOW-UP QUESTION
+     elif awaiting_followup and current_followup_q:
+-        if extracted_syms:
+-            formatted = ", ".join([s.title() for s in extracted_syms])
+-            response_md += f"I've identified the following symptoms: **{formatted}**\n\n"
+-
+-        response_md += f"❓ **{current_followup_q}**\n\n"
+-        response_md += "*Please answer this question so I can better assess your situation.*"
++        response_md += f"❓ **{current_followup_q}**"
+ 
+     # FULL ANALYSIS RESULT
+     elif stage in ("REPORT_GENERATION", "HOSPITAL_OFFER", "FOLLOWUP_SUFFICIENT", "RISK_ASSESSMENT",
+                    "RECOMMENDATIONS", "DISEASE_ANALYSIS", "EMERGENCY_POST_CHECK"):
++        # Go straight to the Clinical Dashboard; only fall back to a chat summary
++        # when no dashboard can be shown.
++        if _dashboard_ready(state):
++            return
+         response_md += _build_analysis_response(state)
+ 
+     # SYMPTOM EXTRACTION (first message with symptoms)
+@@ -565,10 +608,6 @@
+     top_k = state.get("top_k_predictions", [])
+     render_conditions(top_k)
+ 
+-    # Follow-up question prompt
+-    if state.get("awaiting_followup") and state.get("current_followup_question"):
+-        st.info(f"❓ **Follow-up Question:** {state['current_followup_question']}")
+-
+     # Answered follow-ups summary
+     answered = state.get("answered_followups", {})
+     if answered:
+@@ -577,16 +616,17 @@
+                 st.markdown(f"- **{category.replace('_', ' ').title()}:** {answer}")
+ 
+     # Guidance tabs
+-    if not state.get("awaiting_followup"):
+-        st.markdown('<div class="section-title">💡 Personalized Guidance</div>', unsafe_allow_html=True)
+-        render_guidance_tabs(state)
++    st.markdown('<div class="section-title">💡 Personalized Guidance</div>', unsafe_allow_html=True)
++    render_guidance_tabs(state)
+ 
+     # Next Steps
+     st.markdown('<div class="section-title">📌 Next Steps</div>', unsafe_allow_html=True)
+-    col1, col2, col3 = st.columns(3)
++    col1, col2, col3, col4 = st.columns(4)
+ 
+     with col1:
+-        if st.button("📄 Medical Report", key="btn_next_steps_med_report", type="primary", use_container_width=True):
++        # Opens the Medical Report page, where patient details are confirmed
++        # and the PDF is generated and downloaded.
++        if st.button("📥 Download Report", key="btn_next_steps_med_report", type="primary", use_container_width=True):
+             st.session_state["current_page"] = "Medical Report"
+             st.rerun()
+     with col2:
+@@ -596,4 +636,7 @@
+     with col3:
+         if st.button("📅 Doctor Appointment", use_container_width=True):
+             st.session_state["current_page"] = "Appointments"
+-            st.rerun()
+\ No newline at end of file
++            st.rerun()
++    with col4:
++        if st.button("New Session", key="btn_new_session_dashboard", use_container_width=True):
++            _start_new_session()
+\ No newline at end of file

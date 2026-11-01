@@ -1,0 +1,38 @@
+# ==============================================================================
+# AGENTIC AI IN MEDICAL DIAGNOSIS - REQUIREMENTS
+# Pinned compatible versions for Python 3.10+ on Windows 10/11
+# ==============================================================================
+
+# Frontend Application
+streamlit==1.65.0
+
+# Data Science & Numerical Processing
+pandas==2.3.3
+numpy==2.2.6
+
+# Machine Learning & Model Serialization
+scikit-learn==1.7.2
+joblib==1.6.0
+
+# Interactive Data Visualization
+plotly==7.1.0
+
+# Agentic AI & LLM Orchestration
+langchain==1.4.3
+langgraph==1.2.13
+google-genai==2.28.0
+python-dotenv==1.2.4
+
+# Relational Database ORM
+SQLAlchemy==2.0.54
+
+# PDF Report Generation
+reportlab==5.0.1
+
+# HTTP Client, Data Validation & Fuzzy String Matching
+requests==2.34.2
+pydantic==2.13.5
+rapidfuzz==3.14.5
+
+# Unit & Integration Testing
+pytest==9.1.1
