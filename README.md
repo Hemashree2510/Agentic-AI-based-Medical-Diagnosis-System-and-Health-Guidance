@@ -122,7 +122,7 @@ The system coordinates 10 specialized agents communicating through a shared type
 
 ### Step 1: Open PowerShell and Navigate to Project
 ```powershell
-cd "D:\HEMASHREE G\Project Review\Agentic AI in medical diagnostics"
+cd "project path"
 ```
 
 ### Step 2: Create & Activate Virtual Environment
